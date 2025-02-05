@@ -1,0 +1,29 @@
+Computer Networking (CSCI-330)
+Spring 2025 – Term Group Project
+P2P File Synchronization Application
+Purpose
+The objectives of this project are:
+1. To promote group work and the sharing of ideas and tasks.
+2. To promote life-long learning.
+3. To empower students with the opportunity to realize that they are capable of attaining
+skill sets on their own with some effort.
+4. To design and synthesize a P2P network application that requires putting together many
+of the concepts and elements learned throughout this semester.
+Introduction and Challenge
+Many file synchronization applications are available (Dropbox, OneDrive, Google Drive, etc.).
+File synchronization ensures that the same file is accessed across many different devices and
+remains consistent and up to date. File synchronization (henceforth called sync or syncing) has
+become an important part of how we work and play. File syncing applications usually utilize
+cloud infrastructure to save enterprise and other data. These applications generally follow a
+client-server architecture, using the observer pattern that utilizes a push mechanism to inform
+clients of changes.
+Such an architecture requires considerable resources and infrastructure. Decentralizing the file
+synchronization process eliminates the complexity of managing a centralized service and
+infrastructure and improves the integrity and safety of files by distributing files to peers. Using a
+decentralized architecture can also be significantly improved. In this project, we will not be
+concerned with building a secure decentralized file synchronization application, although doing
+so will earn a significant extra credit (see Project Requirements below).
+Your challenge is to design a P2P file-syncing application. The application needs to be able
+to, at a minimum, obtain the list of all devices currently in the network as well as the directories
+that are being shared or synchronized across peer devices. It should also be able to react to any
+file changes in synchronized folders. Strategies should be adopted to deal with different use cases
