@@ -1,8 +1,10 @@
 import socket
-import pickle
 import threading
-import os
 import time
+import pickle
+from queue import Queue
+
+clients = {}  # {client_name: {'socket': socket, 'address': tuple, 'queue': Queue}}
 
 def get_local_ip():
     """Get the local IP address of the machine."""
@@ -15,97 +17,114 @@ def get_local_ip():
     finally:
         s.close()
 
-SERVER_HOST = get_local_ip()  # Dynamically get local IP
-SERVER_PORT = 65432  # Server port for client connections
-BROADCAST_PORT = 12345  # UDP port for server discovery
+def broadcast_client_list():
+    """Broadcast the updated client list to all clients."""
+    client_list = {name: info['address'] for name, info in clients.items()}
+    for name, info in clients.copy().items():
+        try:
+            info['socket'].sendall(pickle.dumps({
+                'type': 'client_list',
+                'data': client_list
+            }))
+        except:
+            if name in clients:
+                del clients[name]
 
-clients = {}  # Dictionary to store client information (client_id: (client_ip, client_port))
-
-# Handle incoming client connection
-def handle_client(client_socket, addr):
+def handle_client(client_socket, address):
+    client_name = None
     try:
-        # First receive client ID
-        client_id = client_socket.recv(1024).decode().strip()
+        client_name = client_socket.recv(1024).decode('utf-8').strip()
+        clients[client_name] = {
+            'socket': client_socket,
+            'address': address,
+            'queue': Queue()
+        }
         
-        # Send ACK as proper pickled message
-        ack_message = pickle.dumps({"type": "ack", "status": "ok"})
-        client_socket.sendall(ack_message)
+        client_socket.sendall(pickle.dumps({
+            'type': 'welcome',
+            'message': f"Welcome {client_name}!",
+            'client_list': {name: info['address'] for name, info in clients.items()}
+        }))
+        broadcast_client_list()
         
-        # Handle further communication
         while True:
             try:
-                # First get message length (4 bytes)
-                length_bytes = client_socket.recv(4)
-                if not length_bytes:
+                data = client_socket.recv(4096)
+                if not data:
                     break
-                length = int.from_bytes(length_bytes, 'big')
-                
-                # Then receive the actual data
-                data = b''
-                while len(data) < length:
-                    packet = client_socket.recv(length - len(data))
-                    if not packet:
-                        raise ConnectionError("Incomplete data")
-                    data += packet
-                
-                # Process the message
+                    
                 message = pickle.loads(data)
-                # ... handle message ...
-
-            except (pickle.PickleError, ConnectionError) as e:
-                print(f"Error with {client_id}: {str(e)}")
+                if message['type'] == 'private_msg':
+                    target = message['target']
+                    if target in clients:
+                        clients[target]['socket'].sendall(pickle.dumps({
+                            'type': 'private_msg',
+                            'from': client_name,
+                            'message': message['message']
+                        }))
+                    else:
+                        client_socket.sendall(pickle.dumps({
+                            'type': 'error',
+                            'message': f"Client {target} not found"
+                        }))
+                elif message['type'] == 'broadcast_msg':
+                    # Broadcast the message to all clients
+                    for other_name, other_info in clients.items():
+                        if other_name != client_name:
+                            other_info['socket'].sendall(pickle.dumps({
+                                'type': 'broadcast_msg',
+                                'from': client_name,
+                                'message': message['message']
+                            }))
+            except:
                 break
-
+                
     except Exception as e:
-        print(f"Client handler error: {str(e)}")
+        print(f"Error with {address}: {str(e)}")
     finally:
+        if client_name and client_name in clients:
+            del clients[client_name]
+            broadcast_client_list()
         client_socket.close()
 
-def broadcast_peer_left(client_id):
-    """Notify all clients about a peer departure"""
-    message = pickle.dumps({
-        'type': 'peer_left',
-        'data': client_id
-    })
-    for peer_id, peer_info in list(clients.items()):
+def listen_for_discovery():
+    """Listen for UDP discovery requests and respond with the server's IP."""
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    udp_socket.bind(('', 12345))  # Listen on UDP port 12345
+    print("[*] Server is listening for discovery requests on UDP port 12345...")
+    
+    while True:
         try:
-            with socket.socket() as s:
-                s.connect((peer_info['ip'], peer_info['port']))
-                s.sendall(message)
-        except:
-            # Remove unreachable peers
-            if peer_id in clients:
-                del clients[peer_id]
+            message, address = udp_socket.recvfrom(1024)
+            if message == b'PING':
+                print(f"Discovery request from {address}")
+                server_ip = get_local_ip()  # Get the server's local IP address
+                udp_socket.sendto(server_ip.encode(), address)  # Respond with server IP
+        except Exception as e:
+            print(f"[ERROR] UDP Error: {e}")
 
-# Server setup to listen for incoming client connections and UDP broadcast
-def start_server():
+def start_server(host='0.0.0.0', port=65432):
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((host, port))
+    server.listen(5)
+    print(f"[*] Server started on {host}:{port}")
+    
+    threading.Thread(target=listen_for_discovery, daemon=True).start()  # Start the UDP discovery listener
+    
     try:
-        # Create a UDP socket to listen for broadcast messages
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
-            udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            udp_socket.bind(('', BROADCAST_PORT))  # Bind to the broadcast port
-
-            print(f"[INFO] Listening for UDP broadcast messages on port {BROADCAST_PORT}...")
-
-            # Start the server to handle TCP client connections
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-                server_socket.bind((SERVER_HOST, SERVER_PORT))
-                server_socket.listen(5)
-                print(f"[INFO] Server listening on {SERVER_HOST}:{SERVER_PORT}...")
-
-                # Respond to broadcast requests with the server's IP
-                while True:
-                    message, addr = udp_socket.recvfrom(1024)
-                    if message == b'PING':
-                        udp_socket.sendto(SERVER_HOST.encode(), addr)
-                        print(f"[INFO] Responded to {addr} with IP: {SERVER_HOST}")
-
-                    client_socket, client_address = server_socket.accept()
-                    client_thread = threading.Thread(target=handle_client, args=(client_socket, client_address))
-                    client_thread.start()
-
-    except Exception as e:
-        print(f"[ERROR] Server failed to start: {e}")
+        while True:
+            client_socket, address = server.accept()
+            threading.Thread(
+                target=handle_client,
+                args=(client_socket, address),
+                daemon=True
+            ).start()
+    except KeyboardInterrupt:
+        print("\n[*] Shutting down server...")
+    finally:
+        server.close()
 
 if __name__ == "__main__":
     start_server()
