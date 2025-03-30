@@ -1,0 +1,199 @@
+Objectives
+
+The protocol uses TLS for encrypted communication to provide safe peer-to-peer file synchronization. Peers are able to share data, join and exit the network flexibly, and get real-time updates.
+
+
+Protocol Components
+
+    Essential:
+
+- All peer-to-peer communications are secured using TLS encryption.
+
+- Peer Discovery: Initial server discovery is done via UDP broadcast.
+
+- File Transfer: Facilitates P2P file transfers directly and tracks progress.
+
+    Improved Functionalities:
+
+- Peer registration and deregistration that is dynamic
+
+- Forwarding messages in real time
+
+- File transfers that are secure and have integrity checks
+
+- Personalized client identification
+
+    File Transfer Protocol:
+
+1. Metadata Message
+
+2. Data Transmission
+
+3. Binary chunks with progress reporting
+
+
+Implementation of Security
+
+    TLS Configuring:
+
+- TLS servers are used by all peers.
+
+- Enabled Perfect Forward Secrecy
+
+- Authentication Flow
+
+
+Protocol Workflow
+
+    Peer Registration:
+
+- Peer transmits a request for discovery
+
+- The peer connects over TLS.
+
+- A peer uses shared resources to send a REG message.
+
+
+    File Syncing:
+
+- Resources are subscribed to by peers (SUB).
+
+- When a file changes, the owner notifies subscribers.
+
+- File requests are made by subscribers using REQ_RES.
+
+- Start of a direct P2P TLS transmission
+
+    Departure of Peers:
+
+- DEREG is sent by a peer.
+
+- Peer removal from the registry.
+
+- Informs subscribers when a resource is unavailable.
+
+    Error Handling:
+
+- Retry Mechanism
+
+- Transmission fails after 3 retries
+
+- Exponential backoff between retries
+
+
+Implementation Details
+
+    Peer Node:
+
+- TLS server for connections coming in
+
+- Watcher for shared folders on the file system
+
+- A queue of messages for outgoing updates
+
+- Manager of transfers for simultaneous file operations
+
+    Points of Code Integration:
+
+- TLS Wrapper: Use TLS to improve socket connections
+
+- File Monitor: Keeps an eye on shared folders for modifications
+
+- Protocol message formats are handled by the message parser.
+
+    Updated protocol more closely matches the given code by:
+
+- Assisting with the current UDP discovery process
+
+- Taking into account unique client IDs
+
+- Supplying unambiguous message formats for the current TCP exchange
+
+- Using TLS to increase security while preserving the existing architecture
+
+- Including the file transfer features that the server code displays
+
+    Client Components:
+
+- Server discovery via UDP broadcast
+
+- Custom ID registration
+
+- Message sending interface
+
+- File transfer capability
+
+- Background listener for incoming connections
+
+    Server Components:
+
+- UDP broadcast responder (handles PING messages)
+
+- TCP connection handler (manages peer registry)
+
+- Message forwarder (routes between peers)
+
+- File transfer manager
+
+
+Client Protocol
+
+    Discovery Phase:
+
+- Waits for server IP response
+
+    Registration:
+
+- Connects to server TCP port
+
+- Sends custom client_id
+
+- Receives peer list
+
+    Listening Service:
+
+- Binds to random available TCP port
+
+- Listens for incoming connections
+
+- Handles both messages and file transfers
+
+    Message Sending:
+
+- Selects target from peer list
+
+- Formats message as {"target": id, "message": content}
+
+- Sends through server
+
+
+Server Protocol
+
+    Initialization:
+
+- Binds to UDP port 12345 for discovery
+
+- Binds to TCP port 65432 for client connections
+
+- Maintains clients dictionary {client_id: (ip, port)}
+
+    Message Forwarding:
+
+- Receives {"target": client_id, "message": content}
+
+- Looks up target in clients dictionary
+
+- Forwards message to target peer
+
+UDP:
+
+Peer → Server: "PING" (broadcast)
+
+Server → Peer: SERVER_HOST (unicast)
+
+TCP:
+
+Peer → Server: Custom client_id (string)
+
+Server → Peer: Updated clients dictionary (pickle)
+
