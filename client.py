@@ -75,18 +75,33 @@ def receive_messages():
             time.sleep(5)
 
 
-# Send a message to a specific peer
-def send_message(target_client_id, message):
-    if target_client_id not in clients:
-        print(f"[ERROR] Target client {target_client_id} not found.")
-        return
+def send_messages(self):
+        """Allow the user to send messages to the server or other clients."""
+        while self.running:
+            try:
+                cmd = input("\nEnter command:\n1. List clients\n2. Send private message\n3. Exit\n> ").strip()
 
-    target_ip, target_port = clients[target_client_id]
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as target_socket:
-        target_socket.connect((target_ip, target_port))
-        target_socket.send(message.encode("utf-8"))
-        print(f"[INFO] Message sent to {target_client_id}")
+                if cmd == '1':
+                    self.client_socket.sendall(pickle.dumps({'type': 'get_clients'}))
+                elif cmd == '2':
+                    target = input("Enter recipient name: ").strip()
+                    message = input("Enter message: ").strip()
+                    self.client_socket.sendall(pickle.dumps({
+                        'type': 'private_msg',
+                        'target': target,
+                        'message': message
+                    }))
+                elif cmd == '3':
+                    self.running = False
+                    self.client_socket.sendall(pickle.dumps({'type': 'exit'}))  # Optional server exit message
+                    break
+                else:
+                    print("[ERROR] Invalid command. Please try again.")
+            except Exception as e:
+                print(f"[ERROR] Failed to send message: {e}")
+                break
 
+        self.client_socket.close()
 
 def start_client():
     global client_id
