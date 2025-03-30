@@ -33,47 +33,27 @@ clients = {}
 # Dynamically generate client_id based on user input
 client_id = input("Enter your custom client ID (string): ")
 
-# Receive messages from other peers
-def receive_messages():
-    while True:
-        try:
-            with socket.socket() as listener:
-                listener.bind(('0.0.0.0', 0))
-                listener.listen(5)
-                
-                while True:
-                    conn, addr = listener.accept()
-                    with conn:
-                        try:
-                            # First get message length
-                            length_bytes = conn.recv(4)
-                            if not length_bytes:
-                                continue
-                            length = int.from_bytes(length_bytes, 'big')
-                            
-                            # Then receive data
-                            data = b''
-                            while len(data) < length:
-                                packet = conn.recv(length - len(data))
-                                if not packet:
-                                    raise ConnectionError("Incomplete data")
-                                data += packet
-                            
-                            # Deserialize
-                            message = pickle.loads(data)
-                            if message.get("type") == "ack":
-                                print("Connection acknowledged")
-                            # ... handle other message types ...
-                            
-                        except pickle.PickleError:
-                            print("Received invalid data - protocol mismatch")
-                        except ConnectionResetError:
-                            print("Peer disconnected abruptly")
+    def receive_messages(self):
+        """Handle incoming messages from the server."""
+        while self.running:
+            try:
+                data = self.client_socket.recv(4096)
+                if not data:
+                    break
 
-        except Exception as e:
-            print(f"Receiver error: {str(e)}")
-            time.sleep(5)
-
+                message = pickle.loads(data)
+                if message['type'] == 'private_msg':
+                    print(f"\n[Private from {message['from']}] {message['message']}")
+                elif message['type'] == 'client_list':
+                    print("\n[Server] Client list updated:")
+                    self.print_client_list(message['data'])
+                elif message['type'] == 'error':
+                    print(f"\n[Error] {message['message']}")
+            except Exception as e:
+                print(f"[ERROR] Failed to receive message: {e}")
+                break
+        print("\n[!] Disconnected from server")
+        self.running = False 
 
 # Send a message to a specific peer
 def send_message(target_client_id, message):
