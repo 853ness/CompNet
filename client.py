@@ -24,9 +24,9 @@ class ChatClient:
             data = self.client_socket.recv(4096)
             welcome = pickle.loads(data)
             print(f"\n[Server] {welcome['message']}")
-            self.print_client_list(welcome['client_list'])
-
             self.client_list = welcome['client_list']  # Store client list
+            self.print_client_list(self.client_list)
+
             self.running = True
             threading.Thread(target=self.receive_messages, daemon=True).start()  # Start the receiver thread
             self.send_messages()  # Handle sending messages
@@ -48,7 +48,8 @@ class ChatClient:
                     print(f"\n[Private from {message['from']}] {message['message']}")
                 elif message['type'] == 'client_list':
                     print("\n[Server] Client list updated:")
-                    self.print_client_list(message['data'])
+                    self.client_list = message['data']
+                    self.print_client_list(self.client_list)
                 elif message['type'] == 'error':
                     print(f"\n[Error] {message['message']}")
             except Exception as e:
@@ -61,7 +62,7 @@ class ChatClient:
         """Allow the user to send messages to the server or other clients."""
         while self.running:
             try:
-                cmd = input("\nEnter command:\n1. List clients\n2. Send private message\n3. Send file\n4. Exit\n> ").strip()
+                cmd = input("\nEnter command:\n1. List clients\n2. Send private message\n3. Send file\n4. Exit\n5. Change download directory\n> ").strip()
 
                 if cmd == '1':
                     self.client_socket.sendall(pickle.dumps({'type': 'get_clients'}))
@@ -85,6 +86,8 @@ class ChatClient:
                     self.running = False
                     self.client_socket.sendall(pickle.dumps({'type': 'exit'}))  # Optional server exit message
                     break
+                elif cmd == '5':
+                    self.change_download_dir()
                 else:
                     print("[ERROR] Invalid command. Please try again.")
             except Exception as e:
@@ -94,6 +97,7 @@ class ChatClient:
         self.client_socket.close()
 
     def send_file(self, target_ip, file_path):
+        """Send a file to the specified recipient."""
         try:
             if not os.path.isfile(file_path):
                 print("[ERROR] The specified file does not exist.")
@@ -101,32 +105,47 @@ class ChatClient:
 
             file_name = os.path.basename(file_path)
             file_size = os.path.getsize(file_path)
-            print(f"Sending file: {file_name} ({file_size} bytes)")
+            print(f"Sending file: {file_name} ({file_size} bytes) to {target_ip}")
 
-            # Connect to the target client directly
+            if isinstance(target_ip, tuple):
+                target_ip = target_ip[0]
+
             file_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            file_socket.connect((target_ip, self.server_port))  # Connect to the target client directly
+            file_socket.connect((target_ip, self.server_port))
 
-        # Send file metadata first
-            metadata = {
-                'type': 'file',
-                'file_name': file_name,
-                'file_size': file_size
-            }
-            file_socket.sendall(pickle.dumps(metadata))  # Ensure this is sending the right type (bytes)
+            metadata = {'type': 'file', 'file_name': file_name, 'file_size': file_size}
+            file_socket.sendall(pickle.dumps(metadata))
 
-            # Open the file and send its contents in chunks
             with open(file_path, 'rb') as file:
                 while (chunk := file.read(4096)):
                     file_socket.sendall(chunk)
+
             print(f"File {file_name} sent successfully.")
             file_socket.close()
         except Exception as e:
             print(f"[ERROR] Failed to send file: {e}")
 
+    def print_client_list(self, client_list):
+        """Print the list of connected clients."""
+        print("\n=== Active Clients ===")
+        for name, address in client_list.items():
+            ip_address = address[0] if isinstance(address, tuple) else address
+            print(f"- {name} ({ip_address})")
+        print("======================")
 
-    def receive_file(self):
-        """Receive a file from another client."""
+    def change_download_dir(self):
+        """Change the download directory."""
+        new_dir = input("Enter the new directory to save received files: ").strip()
+        
+        if os.path.isdir(new_dir):
+            self.download_dir = new_dir
+            print(f"[INFO] Download directory changed to: {self.download_dir}")
+        else:
+            print("[ERROR] Invalid directory. Please enter a valid path.")
+
+
+    def receive_messages(self):
+        """Handle incoming messages from the server."""
         while self.running:
             try:
                 data = self.client_socket.recv(4096)
@@ -134,35 +153,20 @@ class ChatClient:
                     break
 
                 message = pickle.loads(data)
-                if message['type'] == 'file':
-                    file_name = message['file_name']
-                    file_size = message['file_size']
-                    print(f"Receiving file: {file_name} ({file_size} bytes)")
-
-                    # Prepare to receive the file content
-                    file_path = os.path.join(self.download_dir, file_name)  # Save file in the chosen directory
-                    with open(file_path, 'wb') as file:
-                        remaining = file_size
-                        while remaining > 0:
-                            chunk = self.client_socket.recv(min(4096, remaining))
-                            if not chunk:
-                                break
-                            file.write(chunk)
-                            remaining -= len(chunk)
-                    print(f"File {file_name} received successfully and saved to {file_path}.")
+                if message['type'] == 'private_msg':
+                    print(f"\n[Private from {message['from']}] {message['message']}")
+                elif message['type'] == 'client_list':
+                    print("\n[Server] Client list updated:")
+                    self.print_client_list(message['data'])
+                elif message['type'] == 'error':
+                    print(f"\n[Error] {message['message']}")
             except Exception as e:
-                print(f"[ERROR] Failed to receive file: {e}")
+                print(f"[ERROR] Failed to receive message: {e}")
                 break
-
         print("\n[!] Disconnected from server")
         self.running = False
 
-    def print_client_list(self, client_list):
-        """Print the list of connected clients."""
-        print("\n=== Active Clients ===")
-        for name, address in client_list.items():
-            print(f"- {name} ({address[0]})")
-        print("======================")
+
 
 def discover_server():
     """Discover the server IP using UDP broadcast."""
@@ -170,25 +174,22 @@ def discover_server():
     broadcast_port = 12345
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp_socket:
         udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        udp_socket.settimeout(5)  # Timeout for receiving response
-        udp_socket.sendto(b'PING', (broadcast_ip, broadcast_port))  # Send PING message
+        udp_socket.settimeout(5)
+        udp_socket.sendto(b'PING', (broadcast_ip, broadcast_port))
         try:
-            server_ip, _ = udp_socket.recvfrom(1024)  # Receive server IP
+            server_ip, _ = udp_socket.recvfrom(1024)
             return server_ip.decode()
         except socket.timeout:
             print("[ERROR] No response from server. Ensure the server is running.")
             return None
 
 if __name__ == "__main__":
-    # Prompt for the file download directory
     download_dir = input("Enter the directory to save received files: ").strip()
 
-    # Ensure the directory exists
     if not os.path.isdir(download_dir):
         print("[ERROR] Invalid directory. Exiting.")
         exit(1)
 
-    # Discover server IP via UDP broadcast
     server_ip = discover_server()
     if server_ip:
         server_port = 65432
