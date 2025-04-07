@@ -1,0 +1,14 @@
+Peer A             Server                 Peer B
+  |                  |                      |
+  |---UDP PING------>|                      |
+  |<--SERVER_HOST----|                      |
+  |---TLS REG-------->|                      |
+  |<--Peer List-------|                      |
+  |------------------------------------>SUB(ResourceX)
+  |                                     <----UPDATE(ResourceX)
+  |------------------------------------>REQ_RES(ResourceX)
+  |                                     <----Metadata(ResourceX)
+  |                                     <----Data Chunk 1
+  |                                     <----Data Chunk 2
+  |---DEREG--------->|                      |
+  |                  |----Notify----------->| (Peer A left)
