@@ -29,6 +29,17 @@ def broadcast_client_list():
         except:
             if name in clients:
                 del clients[name]
+def broadcast_shared_files():
+    for name, info in clients.copy().items():
+        try:
+            info['socket'].sendall(pickle.dumps({
+                'type': 'shared_files_update',
+                'data': shared_files
+            }))
+        except:
+            if name in clients:
+                del clients[name]
+
 
 def handle_client(client_socket, address):
     client_name = None
