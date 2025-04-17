@@ -110,9 +110,10 @@ def start_server(host='0.0.0.0', port=65432):
     server.bind((host, port))
     server.listen(5)
     print(f"[*] Server started on {host}:{port}")
-    
-    threading.Thread(target=listen_for_discovery, daemon=True).start()  # Start the UDP discovery listener
-    
+
+    threading.Thread(target=listen_for_discovery, daemon=True).start()
+    threading.Thread(target=check_file_modifications, daemon=True).start()
+
     try:
         while True:
             client_socket, address = server.accept()
@@ -125,6 +126,5 @@ def start_server(host='0.0.0.0', port=65432):
         print("\n[*] Shutting down server...")
     finally:
         server.close()
-
 if __name__ == "__main__":
     start_server()
