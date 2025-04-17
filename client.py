@@ -195,3 +195,7 @@ if __name__ == "__main__":
         server_port = 65432
         client = ChatClient(server_ip, server_port, download_dir)
         client.connect()
+    def update_status(self, message):
+        """Update the status bar"""
+        self.status_var.set(message)
+        self.root.update()
