@@ -195,3 +195,33 @@ if __name__ == "__main__":
         server_port = 65432
         client = ChatClient(server_ip, server_port, download_dir)
         client.connect()
+
+def unshare_file(self):
+        """Unshare a previously shared file"""
+        selected = self.files_tree.focus()
+        if not selected:
+            messagebox.showerror("Error", "Please select a file to unshare")
+            return
+
+        item = self.files_tree.item(selected)
+        if item['parent']:  # This is a file item
+            client_name = self.files_tree.item(item['parent'])['text']
+            file_name = item['text']
+
+            if client_name == self.name:  # Only allow unsharing your own files
+                try:
+                    # Remove from local tracking
+                    self.shared_files_list = [
+                        f for f in self.shared_files_list
+                        if f[1] != file_name
+                    ]
+
+                    self.client_socket.sendall(pickle.dumps({
+                        'type': 'unshare_file',
+                        'file_name': file_name
+                    }))
+                    self.display_message(f"\nUnshared file '{file_name}'")
+                except Exception as e:
+                    self.display_message(f"\nError unsharing file: {e}")
+            else:
+                messagebox.showerror("Error", "You can only unshare your own files")
