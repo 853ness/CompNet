@@ -2,6 +2,11 @@ import socket
 import pickle
 import threading
 import os
+import hashlib
+import time
+from tkinter import *
+from tkinter import filedialog, messagebox, scrolledtext, simpledialog
+import tkinter.ttk as ttk
 
 class ChatClient:
     def __init__(self, server_host, server_port, download_dir):
