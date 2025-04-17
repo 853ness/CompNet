@@ -3,15 +3,136 @@ import pickle
 import threading
 import os
 
+
 class ChatClient:
-    def __init__(self, server_host, server_port, download_dir):
-        self.server_host = server_host
-        self.server_port = server_port
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.running = False
+    def __init__(self, root):
+        self.root = root
+        self.root.title("P2P File-Transfer Client")
+
+        # Server connection info
+        self.server_ip = None
+        self.server_port = 65432
+        self.client_socket = None
+
+        # Client info
         self.name = None
-        self.download_dir = download_dir  # Directory for storing received files
-        self.client_list = {}  # Store connected clients list
+        self.clients = {}
+        self.shared_files = {}  # Dictionary to store shared files {client_name: [file_list]}
+        self.running = True
+        self.file_transfer_port = 65433
+        self.file_receiver = None
+        self.download_dir = os.path.join(os.getcwd(), "received_files")
+        self.shared_files_list = []  # Tracks files shared by this client
+
+        # Create default download directory if it doesn't exist
+        os.makedirs(self.download_dir, exist_ok=True)
+
+        # Setup GUI
+        self.setup_gui()
+
+        # Start connection process
+        self.connect_to_server()
+
+    def setup_gui(self):
+        """Set up the Tkinter GUI"""
+        # Main frames
+        self.main_frame = Frame(self.root)
+        self.main_frame.pack(padx=10, pady=10, fill=BOTH, expand=True)
+
+        # Left panel with notebook for clients and files
+        self.left_panel = Frame(self.main_frame)
+        self.left_panel.pack(side=LEFT, fill=Y, padx=5, pady=5)
+
+        # Notebook for tabs
+        self.notebook = ttk.Notebook(self.left_panel)
+        self.notebook.pack(fill=BOTH, expand=True)
+
+        # Clients tab
+        self.client_tab = Frame(self.notebook)
+        self.notebook.add(self.client_tab, text="Clients")
+
+        self.client_tree = ttk.Treeview(self.client_tab, columns=('ip',), show='tree headings')
+        self.client_tree.heading('#0', text='Name')
+        self.client_tree.heading('ip', text='IP Address')
+        self.client_tree.column('ip', width=100, anchor='w')
+        self.client_tree.pack(fill=BOTH, expand=True)
+
+        # Files tab
+        self.files_tab = Frame(self.notebook)
+        self.notebook.add(self.files_tab, text="Shared Files")
+
+        self.files_tree = ttk.Treeview(self.files_tab, columns=('size', 'version'), show='tree headings')
+        self.files_tree.heading('#0', text='File')
+        self.files_tree.heading('size', text='Size')
+        self.files_tree.heading('version', text='Version')
+        self.files_tree.column('size', width=80, anchor='e')
+        self.files_tree.column('version', width=60, anchor='center')
+        self.files_tree.pack(fill=BOTH, expand=True)
+
+        # Chat display
+        self.chat_frame = LabelFrame(self.main_frame, text="Chat")
+        self.chat_frame.pack(side=LEFT, fill=BOTH, expand=True, padx=5, pady=5)
+
+        self.chat_display = scrolledtext.ScrolledText(self.chat_frame, state='disabled')
+        self.chat_display.pack(fill=BOTH, expand=True)
+
+        # Message entry
+        self.msg_frame = Frame(self.chat_frame)
+        self.msg_frame.pack(fill=X, pady=5)
+
+        self.msg_entry = Entry(self.msg_frame)
+        self.msg_entry.pack(side=LEFT, fill=X, expand=True)
+        self.msg_entry.bind('<Return>', self.send_message)
+
+        self.send_btn = ttk.Button(self.msg_frame, text="Send", command=self.send_message)
+        self.send_btn.pack(side=LEFT, padx=5)
+
+        # File sharing controls
+        self.file_share_frame = LabelFrame(self.root, text="File Sharing")
+        self.file_share_frame.pack(fill=X, padx=10, pady=5)
+
+        self.share_file_path = StringVar()
+        self.share_file_entry = Entry(self.file_share_frame, textvariable=self.share_file_path, state='readonly')
+        self.share_file_entry.pack(side=LEFT, fill=X, expand=True, padx=5)
+
+        self.browse_share_btn = ttk.Button(self.file_share_frame, text="Browse", command=self.browse_share_file)
+        self.browse_share_btn.pack(side=LEFT, padx=5)
+
+        self.share_btn = ttk.Button(self.file_share_frame, text="Share File", command=self.share_file_with_server)
+        self.share_btn.pack(side=LEFT, padx=5)
+
+        self.unshare_btn = ttk.Button(self.file_share_frame, text="Unshare Selected", command=self.unshare_file)
+        self.unshare_btn.pack(side=LEFT, padx=5)
+
+        # File transfer controls
+        self.file_transfer_frame = LabelFrame(self.root, text="File Transfer")
+        self.file_transfer_frame.pack(fill=X, padx=10, pady=5)
+
+        self.download_btn = ttk.Button(self.file_transfer_frame, text="Download Selected", command=self.download_file)
+        self.download_btn.pack(side=LEFT, padx=5)
+
+        # Download directory controls
+        self.dir_frame = LabelFrame(self.root, text="Download Directory")
+        self.dir_frame.pack(fill=X, padx=10, pady=5)
+
+        self.dir_path = StringVar(value=self.download_dir)
+        self.dir_entry = Entry(self.dir_frame, textvariable=self.dir_path, state='readonly')
+        self.dir_entry.pack(side=LEFT, fill=X, expand=True, padx=5)
+
+        self.change_dir_btn = ttk.Button(self.dir_frame, text="Change", command=self.change_download_dir)
+        self.change_dir_btn.pack(side=LEFT, padx=5)
+
+        # Status bar
+        self.status_var = StringVar(value="Disconnected")
+        self.status_bar = Label(self.root, textvariable=self.status_var, bd=1, relief=SUNKEN, anchor=W)
+        self.status_bar.pack(fill=X, padx=10, pady=5)
+
+        # Menu
+        self.menu_bar = Menu(self.root)
+        self.file_menu = Menu(self.menu_bar, tearoff=0)
+        self.file_menu.add_command(label="Exit", command=self.cleanup)
+        self.menu_bar.add_cascade(label="File", menu=self.file_menu)
+        self.root.config(menu=self.menu_bar)
 
     def connect(self):
         """Connect to the server and register the client."""
