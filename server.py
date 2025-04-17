@@ -30,6 +30,7 @@ def broadcast_client_list():
             if name in clients:
                 del clients[name]
 
+
 def handle_client(client_socket, address):
     client_name = None
     try:
