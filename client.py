@@ -195,3 +195,39 @@ if __name__ == "__main__":
         server_port = 65432
         client = ChatClient(server_ip, server_port, download_dir)
         client.connect()
+
+    def connect_to_server(self):
+        """Connect to the chat server"""
+        if not self.server_ip and not self.discover_server():
+            self.server_ip = simpledialog.askstring("Server IP", "Enter server IP manually:")
+            if not self.server_ip:
+                return False
+
+        self.name = simpledialog.askstring("Your Name", "Enter your name:")
+        if not self.name:
+            return False
+
+        try:
+            self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.client_socket.connect((self.server_ip, self.server_port))
+            self.client_socket.sendall(pickle.dumps({
+                'type': 'connect',
+                'name': self.name,
+                'port': self.file_transfer_port
+            }))
+
+            # Start listening for messages from server
+            threading.Thread(target=self.receive_messages, daemon=True).start()
+
+            # Start file receiver in background
+            self.start_file_receiver()
+
+            # Start file monitoring thread
+            threading.Thread(target=self.monitor_shared_files, daemon=True).start()
+
+            self.update_status(f"Connected as {self.name}")
+            return True
+        except Exception as e:
+            self.update_status(f"Failed to connect: {e}")
+            messagebox.showerror("Connection Error", f"Failed to connect: {e}")
+            return False
