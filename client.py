@@ -166,6 +166,39 @@ class ChatClient:
         print("\n[!] Disconnected from server")
         self.running = False
 
+    def handle_incoming_file(self, conn):
+        try:
+            # 1) Read the requested filename
+            requested = conn.recv(1024).decode()
+            if not requested:
+                return
+
+            # 2) Find the full path in our shared_files_list
+            match = next(
+                (fullpath for (fullpath, name, _, _) in self.shared_files_list
+                 if name == requested),
+                None
+            )
+            if match is None or not os.path.exists(match):
+                conn.sendall("ERROR|File not found".encode())
+                return
+
+            # 3) Send back metadata and then the bytes
+            file_size = os.path.getsize(match)
+            conn.sendall(f"{requested}|{file_size}".encode())
+
+            with open(match, "rb") as f:
+                while True:
+                    chunk = f.read(4096)
+                    if not chunk:
+                        break
+                    conn.sendall(chunk)
+
+        except Exception as e:
+            self.display_message(f"\nError sending file: {e}")
+        finally:
+            conn.close()
+
 
 
 def discover_server():
