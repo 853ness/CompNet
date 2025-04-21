@@ -101,6 +101,12 @@ class ChatClient:
 
         self.client_socket.close()
 
+    def browse_share_file(self):
+        """Open file dialog to select file to share"""
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            self.share_file_path.set(file_path)
+
     def send_file(self, target_ip, file_path):
         """Send a file to the specified recipient."""
         try:
