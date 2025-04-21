@@ -1,0 +1,161 @@
+import socket
+import threading
+import pickle
+import time
+import hashlib
+import os
+from queue import Queue
+from datetime import datetime
+
+# Global variables
+clients = {}  # {client_name: {'socket': socket, 'address': tuple, 'queue': Queue}}
+shared_files = {}  # {client_name: [(file_name, file_size, last_modified, file_hash, version)]}
+file_history = {}  # {client_name: {file_name: [(version, size, mtime, hash)]}}
+
+def get_local_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+def broadcast_client_list():
+    client_list = {name: info['address'] for name, info in clients.items()}
+    for name, info in clients.copy().items():
+        try:
+            info['socket'].sendall(pickle.dumps({
+                'type': 'client_list',
+                'data': client_list
+            }))
+        except:
+            if name in clients:
+                del clients[name]
+
+def broadcast_shared_files():
+    for name, info in clients.copy().items():
+        try:
+            info['socket'].sendall(pickle.dumps({
+                'type': 'shared_files_update',
+                'data': shared_files
+            }))
+        except:
+            if name in clients:
+                del clients[name]
+
+def check_file_modifications():
+    while True:
+        time.sleep(60)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{current_time}] Checking file modifications...")
+        
+        for client_name, files in shared_files.copy().items():
+            if client_name not in clients:
+                continue
+                
+            for file_info in files:
+                file_name = file_info[0]
+                try:
+                    clients[client_name]['socket'].sendall(pickle.dumps({
+                        'type': 'verify_file',
+                        'file_name': file_name
+                    }))
+                except:
+                    if client_name in shared_files:
+                        del shared_files[client_name]
+                    break
+
+def handle_client(client_socket, address):
+    client_name = None
+    try:
+        data = client_socket.recv(1024)
+        if not data:
+            return
+            
+        connection_data = pickle.loads(data)
+        client_name = connection_data['name']
+        client_port = connection_data.get('port', address[1])
+        
+        clients[client_name] = {
+            'socket': client_socket,
+            'address': (address[0], client_port),
+            'queue': Queue()
+        }
+        
+        client_socket.sendall(pickle.dumps({
+            'type': 'welcome',
+            'message': f"Welcome {client_name}!",
+            'client_list': {name: info['address'] for name, info in clients.items()},
+            'shared_files': shared_files
+        }))
+        
+        broadcast_client_list()
+        
+        while True:
+            try:
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+                    
+                message = pickle.loads(data)
+                
+                if message['type'] == 'private_msg':
+                    target = message['target']
+                    if target in clients:
+                        clients[target]['socket'].sendall(pickle.dumps({
+                            'type': 'private_msg',
+                            'from': client_name,
+                            'message': message['message']
+                        }))
+                    else:
+                        client_socket.sendall(pickle.dumps({
+                            'type': 'error',
+                            'message': f"Client {target} not found"
+                        }))
+                
+                elif message['type'] == 'broadcast_msg':
+                    for other_name, other_info in clients.items():
+                        if other_name != client_name:
+                            other_info['socket'].sendall(pickle.dumps({
+                                'type': 'broadcast_msg',
+                                'from': client_name,
+                                'message': message['message']
+                            }))
+                
+                elif message['type'] == 'share_file':
+                    try:
+                        required_fields = ['file_name', 'file_size', 'file_mtime', 'file_hash']
+                        if not all(field in message for field in required_fields):
+                            raise ValueError("Missing required file information")
+                            
+                        file_name = message['file_name']
+                        file_size = message['file_size']
+                        file_mtime = message['file_mtime']
+                        file_hash = message['file_hash']
+                        
+                        if client_name not in shared_files:
+                            shared_files[client_name] = []
+                            
+                        file_index = next((i for i, (fname, *_) in enumerate(shared_files[client_name]) 
+                                        if fname == file_name), None)
+                        
+                        if file_index is not None:
+                            _, _, _, _, version = shared_files[client_name][file_index]
+                            shared_files[client_name][file_index] = (
+                                file_name, file_size, file_mtime, file_hash, version + 1
+                            )
+                        else:
+                            shared_files[client_name].append(
+                                (file_name, file_size, file_mtime, file_hash, 1))
+                        
+                        if client_name not in file_history:
+                            file_history[client_name] = {}
+                        if file_name not in file_history[client_name]:
+                            file_history[client_name][file_name] = []
+                            
+                        file_history[client_name][file_name].append(
+                            (shared_files[client_name][-1][4], file_size, file_mtime, file_hash))
+                        
+                        broadcast_shared_files()
