@@ -185,27 +185,55 @@ class ChatClient:
             print("[ERROR] Invalid directory. Please enter a valid path.")
 
 
-    def receive_messages(self):
-        """Handle incoming messages from the server."""
+        """Listen for messages from the server"""
         while self.running:
             try:
                 data = self.client_socket.recv(4096)
                 if not data:
                     break
-
+                    
                 message = pickle.loads(data)
-                if message['type'] == 'private_msg':
-                    print(f"\n[Private from {message['from']}] {message['message']}")
+                
+                if message['type'] == 'welcome':
+                    self.display_message(f"Server: {message['message']}")
+                    self.clients = message['client_list']
+                    self.shared_files = message['shared_files']
+                    self.update_client_list()
+                    self.update_shared_files_list()
+                
                 elif message['type'] == 'client_list':
-                    print("\n[Server] Client list updated:")
-                    self.print_client_list(message['data'])
+                    self.clients = message['data']
+                    self.update_client_list()
+                
+                elif message['type'] == 'shared_files_update':
+                    self.shared_files = message['data']
+                    self.update_shared_files_list()
+                
+                elif message['type'] == 'private_msg':
+                    self.display_message(f"[Private from {message['from']}]: {message['message']}")
+                
+                elif message['type'] == 'broadcast_msg':
+                    self.display_message(f"[Broadcast from {message['from']}]: {message['message']}")
+                
+                elif message['type'] == 'file_changed':
+                    self.display_message(
+                        f"\nFile update: {message['client']}'s {message['file']} "
+                        f"(v{message['new_version']}, {self.format_file_size(message['new_size'])})"
+                    )
+                
                 elif message['type'] == 'error':
-                    print(f"\n[Error] {message['message']}")
-            except Exception as e:
-                print(f"[ERROR] Failed to receive message: {e}")
+                    self.display_message(f"[Error]: {message['message']}")
+                
+            except (ConnectionResetError, pickle.PickleError):
                 break
-        print("\n[!] Disconnected from server")
+            except Exception as e:
+                self.display_message(f"\nError receiving message: {e}")
+                break
+        
+        self.display_message("\nDisconnected from server")
+        self.update_status("Disconnected")
         self.running = False
+
 
     def handle_incoming_file(self, conn):
         try:
