@@ -107,6 +107,36 @@ class ChatClient:
         if file_path:
             self.share_file_path.set(file_path)
 
+    def share_file_with_server(self):
+        """Share a file with the server to make it available to other clients"""
+        file_path = self.share_file_path.get()
+        if not file_path or not os.path.exists(file_path):
+            messagebox.showerror("Error", "Please select a valid file first")
+            return
+        
+        try:
+            file_name = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            file_mtime = os.path.getmtime(file_path)
+            file_hash = self.calculate_file_hash(file_path)
+            
+            self.shared_files_list.append((file_path, file_name, file_size, file_mtime))
+            
+            self.client_socket.sendall(pickle.dumps({
+                'type': 'share_file',
+                'file_name': file_name,
+                'file_size': file_size,
+                'file_mtime': file_mtime,
+                'file_hash': file_hash
+            }))
+            
+            self.display_message(f"\nShared file '{file_name}' with the server")
+            self.share_file_path.set("")
+            
+        except Exception as e:
+            self.display_message(f"\nError sharing file: {e}")
+    
+
     def send_file(self, target_ip, file_path):
         """Send a file to the specified recipient."""
         try:
