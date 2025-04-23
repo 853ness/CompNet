@@ -104,27 +104,3 @@ def listen_for_discovery():
         except Exception as e:
             print(f"[ERROR] UDP Error: {e}")
 
-def start_server(host='0.0.0.0', port=65432):
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((host, port))
-    server.listen(5)
-    print(f"[*] Server started on {host}:{port}")
-    
-    threading.Thread(target=listen_for_discovery, daemon=True).start()  # Start the UDP discovery listener
-    
-    try:
-        while True:
-            client_socket, address = server.accept()
-            threading.Thread(
-                target=handle_client,
-                args=(client_socket, address),
-                daemon=True
-            ).start()
-    except KeyboardInterrupt:
-        print("\n[*] Shutting down server...")
-    finally:
-        server.close()
-
-if __name__ == "__main__":
-    start_server()
