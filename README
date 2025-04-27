@@ -27,3 +27,15 @@ Your challenge is to design a P2P file-syncing application. The application need
 to, at a minimum, obtain the list of all devices currently in the network as well as the directories
 that are being shared or synchronized across peer devices. It should also be able to react to any
 file changes in synchronized folders. Strategies should be adopted to deal with different use cases
+
+
+
+Explanation of how to run the code:
+
+1. Start off by running the server, then run the client.
+2. type in a name for the device you are on client side so that the server can register you. If you want to test multiple clients, you need seperate devices for each client.
+3. once registered, you can view the list of clients in the client or switch to the files tab and look at the shared file list.
+4. Click the browse button to find a file you want to share, then click share file for it to show up in the shared file list. (There can be issues with certain files where their file size cannot be converted into a 8-bit int number)
+5. After sharing the file, another client can download that shared file and the file will go to the folder created by the code. You can change the download destination if you want to.
+6. To see the file sync, shared a file and change an aspect of it, like the name or some of the content within the file, then the server will announce the change and then you can click the shared file again and download the new revision.
+7. Keep in mind the files shared cannot be unshared unless the client or server shuts down.
